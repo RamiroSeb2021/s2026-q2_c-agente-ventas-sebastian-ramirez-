@@ -1,0 +1,14 @@
+[project]
+name = "sales-query-agent"
+version = "0.1.0"
+description = "Agentic AI sales analysis project scaffold"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "faker>=40.21.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

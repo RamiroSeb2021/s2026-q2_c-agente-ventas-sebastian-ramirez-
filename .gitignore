@@ -1,0 +1,19 @@
+# Local Pi runtime state
+.atl/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Generated data and outputs
+data/*.csv
+*.db
+*.sqlite
+*.sqlite3
+outputs/
+
+# Python local artifacts
+.venv/
+__pycache__/
+.pytest_cache/
