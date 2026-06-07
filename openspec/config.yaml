@@ -1,0 +1,110 @@
+schema: spec-driven
+project: s2026-q2_c-agente-ventas-sebastian-ramirez
+initialized: 2026-06-06
+persistence:
+  mode: openspec+engram
+  artifact_store: openspec+engram
+session:
+  execution_mode: interactive
+  chained_pr_strategy: auto-forecast
+  review_budget_changed_lines: 400
+context: |
+  Practical assignment to build an Agentic AI sales analysis app.
+  Target UI is Streamlit and target packaging is Docker.
+  The agent should answer natural-language questions over a SQL ventas table.
+  Required ventas columns: id, vendedor, sede, producto, cantidad, precio, fecha.
+  Use LangGraph, Strands, or LangChain with Amazon Bedrock available as LLM provider.
+  Prefer MCP-compatible SQL/database connectors.
+  Support text, table, chart, CSV, and Excel outputs.
+  Current repo has agent/docs/config scaffolding only; no runnable app exists yet.
+stack:
+  detected:
+    language: none-yet
+    app_framework: none-yet
+    package_manager: none-yet
+    runtime: none-yet
+    database: none-yet
+    container: none-yet
+  target:
+    language: python
+    package_manager: uv
+    ui: streamlit
+    agent_framework_options:
+      - LangGraph
+      - Strands
+      - LangChain
+    llm_provider: Amazon Bedrock
+    database: SQLite sample database unless changed later
+    sql_connector: MCP-compatible connector preferred
+    visualization_options:
+      - Plotly
+      - Matplotlib
+      - Altair
+    exports:
+      - CSV
+      - Excel
+    container: Docker
+    docker_dependency_source: pyproject.toml and uv.lock
+testing:
+  strict_tdd: false
+  reason: No test runner or implementation files are present yet.
+  detected_on: 2026-06-06
+  runner:
+    available: false
+    command: ""
+    framework: ""
+  layers:
+    unit:
+      available: false
+      tool: ""
+    integration:
+      available: false
+      tool: ""
+    e2e:
+      available: false
+      tool: ""
+  coverage:
+    available: false
+    command: ""
+  quality:
+    linter:
+      available: false
+      command: ""
+    type_checker:
+      available: false
+      command: ""
+    formatter:
+      available: false
+      command: ""
+rules:
+  proposal:
+    - Keep proposals concise and focused on the current phase.
+    - Record current repo reality separately from target design.
+    - In interactive mode, ask product questions before writing a proposal when business rules or trade-offs are unclear.
+  specs:
+    - Use RFC 2119 keywords for requirements.
+    - Include scenarios for natural-language query, SQL generation, table/text output, chart output, and file export.
+    - Require semantic intent detection through an LLM, not hardcoded keyword routing.
+  design:
+    - Separate Streamlit UI, agent orchestration, SQL/MCP access, visualization, export, configuration, and sample data.
+    - Use uv for Python dependency management and locking; Docker builds should install from pyproject.toml/uv.lock.
+    - Keep AWS/Bedrock credentials outside source files and Docker images.
+    - Explain connector choice if an MCP-compatible SQL connector is not used.
+  tasks:
+    - Group work into reviewable slices under the 400 changed-line budget when possible.
+    - Do not include app implementation in SDD initialization tasks.
+  apply:
+    tdd: false
+    test_command: ""
+    constraints:
+      - Do not create or modify cloud resources without explicit approval.
+      - Prefer local sample data and read-only SQL during implementation.
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+    constraints:
+      - Do not invent Streamlit, uv, Docker, or test commands until project files define them.
+  archive:
+    - Preserve archived OpenSpec changes as audit history.
+    - Warn before merging destructive or scope-changing deltas.

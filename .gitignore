@@ -1,5 +1,6 @@
 # Local Pi runtime state
 .atl/
+.pi/
 
 # Local environment and secrets
 .env
@@ -17,3 +18,11 @@ outputs/
 .venv/
 __pycache__/
 .pytest_cache/
+
+# Generated assistant setup outputs from skills/setup.sh
+.claude/
+.codex/
+.gemini/
+CLAUDE.md
+GEMINI.md
+.github/copilot-instructions.md
