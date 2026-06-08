@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the sales analysis agent behavior across the current Streamlit/Bedrock/LangGraph/MCP/SQLite slice. Current implementation uses deterministic local data generation, Amazon Bedrock for semantic intent and SQL generation, a minimal LangGraph agent boundary, deterministic SQL validation, `mcp-server-sqlite` for MCP-mediated SQLite execution, and a chat-style Streamlit table interface.
+Define the sales analysis agent behavior across the current Streamlit/Bedrock/LangGraph/MCP/SQLite slice. Current implementation uses deterministic local data generation, Amazon Bedrock for semantic intent, output intent, and SQL generation, a minimal LangGraph agent boundary, deterministic SQL validation, `mcp-server-sqlite` for MCP-mediated SQLite execution, and a chat-style Streamlit interface with table, chart, CSV, and Excel outputs.
 
 ### Requirement: Minimal Agent Framework Boundary
 
@@ -43,12 +43,12 @@ The project MUST keep generated database artifacts out of required committed fir
 
 ### Requirement: Seed Initialization Before Query Service Use
 
-The local setup MUST run the seed or initialization process before the application database dependency relies on the SQLite database. Current Compose packaging includes a one-shot `seed` service that runs before the app service.
+The local setup MUST run the seed or initialization process before the application database dependency relies on the SQLite database.
 
 #### Scenario: Seed/init runs before app or MCP depends on DB
 
 - GIVEN the generated SQLite database is required for query execution
-- WHEN the local environment or Docker Compose starts the system for the first slice
+- WHEN the local environment starts the system for the first slice
 - THEN the seed or initialization process MUST run before the app or future MCP dependency attempts to query the database
 - AND the app MUST NOT assume a precommitted database artifact exists in the repository
 
@@ -199,16 +199,74 @@ The system MUST politely refuse questions outside the sales-analysis scope in an
 - AND the assistant message MUST NOT show generated SQL
 - AND the assistant message MUST NOT show a dataframe or result table
 
-### Requirement: First-Slice Unsupported Output Handling
+### Requirement: Semantic Output Intent Handling
 
-The system SHOULD clearly defer unsupported chart or export requests in the first slice. This behavior is planned but not yet fully implemented in the current chat UI; chart and CSV/Excel support remain future Slice 4 work.
+The system MUST use Bedrock to infer supported output intent semantically and MUST NOT use Streamlit keyword checks to route chart or export requests.
 
-#### Scenario: Unsupported chart or export request
+#### Scenario: Chart or export intent is model-provided
 
-- GIVEN the user asks for a chart, CSV, or Excel output during the first slice
-- WHEN the request reaches the first-slice system behavior
-- THEN the system MUST communicate that chart or export output is not yet supported in this slice
-- AND the system MAY still continue with a supported table-oriented response only if doing so does not misrepresent the unsupported request as fully completed
+- GIVEN the user asks for a table, chart, CSV, or Excel sales result in natural language
+- WHEN Bedrock classifies the request
+- THEN Bedrock MUST return a structured plan containing `output_type`, `sql`, and optional `chart_type` for chart outputs
+- AND `output_type` MUST be one of `table`, `chart`, `csv`, or `excel`
+- AND the SQL MUST still be validated before MCP execution
+- AND the Streamlit UI MUST render from the returned `output_type` rather than matching prompt keywords
+
+### Requirement: Chart and Export Outputs
+
+The system MUST support chart, CSV, and Excel rendering for successful SQL-backed results while preserving the visible generated SQL and dataframe result.
+For chart outputs, the system MUST accept only validated deterministic `chart_type` values: `bar`, `pie`, `line`, and `scatter`.
+
+#### Scenario: Chart output request
+
+- GIVEN Bedrock returns `output_type` `chart` with a validated SQL query and `chart_type` `bar`, `pie`, or `line`
+- WHEN the query returns rows with exactly two columns where the second column is numeric
+- THEN the assistant chat message MUST show the generated SQL
+- AND it MUST show the dataframe result
+- AND it MUST render the selected deterministic Plotly chart
+
+#### Scenario: Scatter chart output request
+
+- GIVEN Bedrock returns `output_type` `chart` with a validated SQL query and `chart_type` `scatter`
+- WHEN the query returns rows with exactly two numeric columns
+- THEN the assistant chat message MUST show the generated SQL
+- AND it MUST show the dataframe result
+- AND it MUST render a deterministic Plotly scatter chart
+
+#### Scenario: Chart type defaults to bar
+
+- GIVEN Bedrock returns `output_type` `chart` with a validated SQL query and omits `chart_type`
+- WHEN the query returns rows with exactly two columns where the second column is numeric
+- THEN the system MUST treat the chart type as `bar` for backwards compatibility
+
+#### Scenario: Unsupported chart type is rejected
+
+- GIVEN Bedrock returns `output_type` `chart` with a `chart_type` outside `bar`, `pie`, `line`, or `scatter`
+- WHEN the system parses the structured Bedrock response
+- THEN the system MUST reject the plan with a clear sanitized error
+- AND it MUST NOT pass arbitrary Plotly function names or code into rendering
+
+#### Scenario: Chart shape is unsupported
+
+- GIVEN Bedrock returns `output_type` `chart` with a validated SQL query
+- WHEN the query result shape or value types do not match the selected chart type
+- THEN the assistant chat message MUST show the generated SQL and dataframe result
+- AND it MUST show a clear info message instead of rendering a broken chart
+
+#### Scenario: CSV or Excel export request
+
+- GIVEN Bedrock returns `output_type` `csv` or `excel` with a validated SQL query
+- WHEN the query returns rows
+- THEN the assistant chat message MUST show the generated SQL
+- AND it MUST show the dataframe result
+- AND it MUST provide a matching download button for the requested file format
+
+#### Scenario: Empty result for chart or export
+
+- GIVEN Bedrock returns `output_type` `chart`, `csv`, or `excel` with a validated SQL query
+- WHEN the query returns no rows
+- THEN the assistant chat message MUST show the generated SQL and an empty-result state
+- AND it MUST NOT render a broken chart or empty download control
 
 ### Requirement: Python Dependency Reproducibility
 

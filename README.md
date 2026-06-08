@@ -11,6 +11,7 @@ Practical assignment scaffold for an Agentic AI sales analysis app.
 - Bedrock SQL-generation prompt/client boundary with mocked test coverage.
 - Query service that connects natural-language questions to generated SQL and query results.
 - Chat-style Streamlit UI in `app.py` for asking questions and viewing generated SQL plus table results.
+- Streamlit chat output can render semantic Bedrock-selected table, chart, CSV, and Excel responses, including deterministic Plotly bar, pie, line, and scatter charts.
 - Minimal LangGraph agent boundary before the query service.
 - SQLite query execution through the `mcp-server-sqlite` MCP server using its `read_query` tool.
 - Sidebar MCP diagnostics can list tables and describe `ventas`; natural-language chat remains limited to sales-analysis questions.
@@ -54,25 +55,28 @@ SQL validation is intentionally conservative in this slice. It uses token and re
 - a numeric `LIMIT` clause required;
 - execution through the MCP SQLite `read_query` tool after validation.
 
-## Docker usage
+## Output formats
 
-Create a local environment file:
+Bedrock returns a structured query plan with `output_type`, `sql`, and optional `chart_type` for chart outputs. The app uses that semantic plan instead of Streamlit keyword checks.
 
-```bash
-cp .env.example .env
-```
+Supported successful SQL-backed outputs:
 
-Manual, not-yet-end-to-end-verified Docker runtime check:
+- `table`: show generated SQL and dataframe results.
+- `chart`: show generated SQL, dataframe results, and a deterministic Plotly chart selected from the validated `chart_type`.
+- `csv`: show generated SQL, dataframe results, and a CSV download button.
+- `excel`: show generated SQL, dataframe results, and an Excel download button.
 
-```bash
-docker compose up --build
-```
+If a query returns no rows, the UI shows an empty-result state and skips chart/download rendering.
 
-Full `docker compose up --build` should be run as the manual runtime check after refreshing AWS SSO credentials.
+Supported safe chart matrix:
 
-Compose reads environment values from `.env`, runs the deterministic seed command in a one-shot `seed` service, publishes the app on `http://localhost:8501`, and mounts `./data:/app/data` so `SALES_DB_PATH=data/sales.db` points at the local generated database.
-It also mounts your local AWS configuration into the container so profile-based credentials such as AWS SSO can be reused by boto3. Run `aws sso login --profile <profile-name>` on the host before starting Compose when using SSO.
+| `chart_type` | Intended use | Required SQL result shape |
+| --- | --- | --- |
+| `bar` | Category ranking or comparison | exactly 2 columns: category + numeric value |
+| `pie` | Category composition or participation | exactly 2 columns: category + numeric value |
+| `line` | Temporal/month/date trend | exactly 2 columns: ordered category/date + numeric value |
+| `scatter` | Relationship between two metrics | 2 numeric columns, or 1 label column plus 2 numeric columns |
+
+When Bedrock omits `chart_type` for a chart response, the app defaults to `bar` for backwards compatibility. Unsupported chart types are rejected before rendering; the app never executes arbitrary Plotly function names from the model.
 
 SQLite query execution goes through `mcp-server-sqlite`; SQL validation still runs before the MCP tool call.
-
-Docker and Compose files are present as packaging support, but full Docker/Compose end-to-end application verification has not been completed yet.

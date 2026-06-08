@@ -45,7 +45,7 @@ def test_answer_sales_question_with_graph_returns_result(tmp_path):
         sales_db_path=db_path,
     )
     bedrock_client = FakeBedrockClient(
-        "SELECT vendedor, SUM(cantidad) AS total_vendido FROM ventas GROUP BY vendedor LIMIT 1"
+        '{"output_type":"chart","chart_type":"bar","sql":"SELECT vendedor, SUM(cantidad) AS total_vendido FROM ventas GROUP BY vendedor LIMIT 1"}'
     )
 
     result = answer_sales_question_with_graph(
@@ -58,4 +58,6 @@ def test_answer_sales_question_with_graph_returns_result(tmp_path):
         "SELECT vendedor, SUM(cantidad) AS total_vendido FROM ventas GROUP BY vendedor LIMIT 1"
     )
     assert result.columns == ["vendedor", "total_vendido"]
+    assert result.output_type == "chart"
+    assert result.chart_type == "bar"
     assert len(result.rows) == 1

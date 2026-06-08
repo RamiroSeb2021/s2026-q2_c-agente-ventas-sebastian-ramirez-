@@ -11,7 +11,6 @@ Columns:
 """
 
 OUT_OF_SCOPE_SENTINEL = "OUT_OF_SCOPE"
-UNSUPPORTED_OUTPUT_SENTINEL = "UNSUPPORTED_OUTPUT"
 
 
 def build_sql_generation_prompt(question: str) -> str:
@@ -25,8 +24,17 @@ Use only this database schema:
 Rules:
 - If the user question is not about analyzing sales data in the ventas table,
   return exactly {OUT_OF_SCOPE_SENTINEL}.
-- If the user asks for a chart, CSV, Excel, file export, or download,
-  return exactly {UNSUPPORTED_OUTPUT_SENTINEL} because this slice only supports SQL and table output.
+- Otherwise return strict JSON only: a compact JSON object with these keys:
+  - "output_type": one of "table", "chart", "csv", or "excel".
+  - "sql": the generated SQLite SELECT query.
+  - "chart_type": include only when "output_type" is "chart"; choose one of "bar", "pie", "line", or "scatter".
+- Infer "output_type" semantically from the user's requested result format.
+- Use "table" when the user asks a normal sales question without requesting a chart or export.
+- Use "chart" for visual graph/plot requests, "csv" for CSV/download-as-CSV requests, and "excel" for Excel/XLSX spreadsheet requests.
+- For chart requests, choose "bar" for category ranking or comparison such as producto, sede, or vendedor plus an aggregate.
+- Choose "pie" for composition or participation by category.
+- Choose "line" for temporal, monthly, or date trends using fecha or strftime.
+- Choose "scatter" only when the SQL returns two numeric metrics.
 - Generate exactly one SQLite SELECT query.
 - Do not use SELECT *; list the needed allowed columns explicitly.
 - Always include a LIMIT clause to avoid returning the full table.
@@ -41,7 +49,9 @@ Rules:
 - Do not generate DROP statements.
 - Do not generate CREATE, ALTER, PRAGMA, ATTACH, DETACH, or VACUUM statements.
 - Do not include markdown fences, comments, explanation, or extra text.
-- Return only the SQL query, exactly {OUT_OF_SCOPE_SENTINEL}, or exactly {UNSUPPORTED_OUTPUT_SENTINEL}.
+- Return only the JSON object or exactly {OUT_OF_SCOPE_SENTINEL}.
+- Example JSON response:
+  {{"output_type":"chart","chart_type":"bar","sql":"SELECT producto, SUM(cantidad) AS total_vendido FROM ventas GROUP BY producto ORDER BY total_vendido DESC LIMIT 5"}}
 
 User question:
 {question}

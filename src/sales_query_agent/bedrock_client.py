@@ -1,4 +1,6 @@
-from typing import Any, Protocol
+import json
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
@@ -6,9 +8,21 @@ from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 from sales_query_agent.config import AppConfig
 from sales_query_agent.prompts import (
     OUT_OF_SCOPE_SENTINEL,
-    UNSUPPORTED_OUTPUT_SENTINEL,
     build_sql_generation_prompt,
 )
+
+
+OutputType = Literal["table", "chart", "csv", "excel"]
+ChartType = Literal["bar", "pie", "line", "scatter"]
+SUPPORTED_OUTPUT_TYPES: set[str] = {"table", "chart", "csv", "excel"}
+SUPPORTED_CHART_TYPES: set[str] = {"bar", "pie", "line", "scatter"}
+
+
+@dataclass(frozen=True)
+class SalesQueryPlan:
+    output_type: OutputType
+    sql: str
+    chart_type: ChartType | None = None
 
 
 class BedrockConverseClient(Protocol):
@@ -36,6 +50,18 @@ def generate_sql_with_bedrock(
     config: AppConfig,
     bedrock_client: BedrockConverseClient,
 ) -> str:
+    return generate_sales_query_plan_with_bedrock(
+        question=question,
+        config=config,
+        bedrock_client=bedrock_client,
+    ).sql
+
+
+def generate_sales_query_plan_with_bedrock(
+    question: str,
+    config: AppConfig,
+    bedrock_client: BedrockConverseClient,
+) -> SalesQueryPlan:
     prompt = build_sql_generation_prompt(question)
     try:
         response = bedrock_client.converse(
@@ -66,22 +92,17 @@ def generate_sql_with_bedrock(
         ) from error
 
     text = _extract_text_response(response)
-    sql = _strip_markdown_fences(text)
+    candidate = _strip_markdown_fences(text)
 
-    if sql == OUT_OF_SCOPE_SENTINEL:
+    if candidate == OUT_OF_SCOPE_SENTINEL:
         raise OutOfScopeQuestionError(
             "This agent can only answer questions about sales data in the ventas table."
         )
 
-    if sql == UNSUPPORTED_OUTPUT_SENTINEL:
-        raise UnsupportedOutputError(
-            "Charts, CSV, Excel, and file exports are not supported in this slice yet. I can still answer with generated SQL and a table."
-        )
+    if not candidate:
+        raise ValueError("Bedrock returned an empty response")
 
-    if not sql:
-        raise ValueError("Bedrock returned an empty SQL response")
-
-    return sql
+    return _parse_sales_query_plan(candidate)
 
 
 def _extract_text_response(response: dict[str, Any]) -> str:
@@ -92,6 +113,9 @@ def _extract_text_response(response: dict[str, Any]) -> str:
 def _strip_markdown_fences(text: str) -> str:
     stripped = text.strip()
 
+    if stripped.startswith("```json") and stripped.endswith("```"):
+        return stripped.removeprefix("```json").removesuffix("```").strip()
+
     if stripped.startswith("```sql") and stripped.endswith("```"):
         return stripped.removeprefix("```sql").removesuffix("```").strip()
 
@@ -99,3 +123,39 @@ def _strip_markdown_fences(text: str) -> str:
         return stripped.removeprefix("```").removesuffix("```").strip()
 
     return stripped
+
+
+def _parse_sales_query_plan(candidate: str) -> SalesQueryPlan:
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError as error:
+        raise ValueError("Bedrock returned invalid JSON for the sales query plan") from error
+
+    if not isinstance(parsed, dict):
+        raise ValueError("Bedrock returned a non-object sales query plan")
+
+    keys = set(parsed.keys())
+    if not {"output_type", "sql"}.issubset(keys) or not keys.issubset(
+        {"output_type", "sql", "chart_type"}
+    ):
+        raise ValueError("Bedrock returned a sales query plan with unexpected keys")
+
+    output_type = parsed["output_type"]
+    sql = parsed["sql"]
+
+    if not isinstance(output_type, str) or output_type not in SUPPORTED_OUTPUT_TYPES:
+        raise ValueError("Bedrock returned an unsupported output_type")
+
+    chart_type = parsed.get("chart_type")
+    if output_type == "chart":
+        if chart_type is None:
+            chart_type = "bar"
+        if not isinstance(chart_type, str) or chart_type not in SUPPORTED_CHART_TYPES:
+            raise ValueError("Bedrock returned an unsupported chart_type")
+    else:
+        chart_type = None
+
+    if not isinstance(sql, str) or not sql.strip():
+        raise ValueError("Bedrock returned an empty SQL response")
+
+    return SalesQueryPlan(output_type=output_type, sql=sql.strip(), chart_type=chart_type)

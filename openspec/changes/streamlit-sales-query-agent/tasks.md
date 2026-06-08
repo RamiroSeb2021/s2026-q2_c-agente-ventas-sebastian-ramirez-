@@ -1,20 +1,10 @@
 # Implementation Tasks: Streamlit Sales Query Agent
 
-## Review Workload Forecast
+## Review Workload Note
 
-| Field | Value |
-|-------|-------|
-| Estimated changed lines | 700-1100 |
-| 400-line budget risk | High |
-| Chained PRs recommended | Yes |
-| Suggested split | PR 1 → PR 2 → PR 3 → PR 4 → PR 5 |
-| Delivery strategy | ask-on-risk |
-| Chain strategy | stacked-to-main |
-
-Decision needed before apply: Yes
-Chained PRs recommended: Yes
-Chain strategy: stacked-to-main
-400-line budget risk: High
+This task file is cumulative across multiple implementation slices. Each slice should be
+reviewed and committed separately when possible so reviewers can focus on one behavior
+change at a time.
 
 ## Task Slices
 
@@ -44,21 +34,23 @@ Chain strategy: stacked-to-main
 - [ ] **REFACTOR: consolidate typed state/result models** in `src/agent/graph.py` and/or `src/models.py` if needed so UI integration does not duplicate normalization logic.
 - [x] **Validate current Slice 3 boundary** with pytest coverage for MCP wrapper and minimal graph; richer multi-node graph validation remains deferred with that future task.
 
-### Slice 4 — Streamlit UI and unsupported-output handling
+### Slice 4 — Streamlit UI chart and export outputs
 
-- [ ] **RED: add UI-focused tests where practical** in `tests/test_app_smoke.py` or module-level tests for empty-result handling, visible SQL, fixed MCP status/test display, unsupported chart/export messaging, and sanitized error propagation from the graph layer.
-- [ ] **GREEN: implement Streamlit entrypoint** in `app.py` and any small UI helper module under `src/ui/` to accept natural-language questions, show configured MCP status/test controls in the sidebar, always show generated SQL, render table results, and clearly defer charts/CSV/Excel in the first slice.
+- [x] **RED: add output-intent tests** in `tests/test_bedrock_client.py`, `tests/test_prompts.py`, `tests/test_query_service.py`, and `tests/test_outputs.py` for structured Bedrock output intent, invalid JSON, output propagation, chart shape handling, CSV export, and Excel export.
+- [x] **GREEN: implement Streamlit chart/export rendering** in `app.py` and `src/sales_query_agent/outputs.py` to accept semantic `output_type`, always show generated SQL/dataframe for successful queries, render deterministic Plotly charts, and provide CSV/Excel download buttons when rows exist.
+- [x] **TRIANGULATE: support multiple deterministic chart types** by validating Bedrock `chart_type` values (`bar`, `pie`, `line`, `scatter`), defaulting omitted chart types to `bar`, propagating the selected chart type through the graph/service/UI boundary, and rendering only the safe Plotly chart matrix.
 - [x] **REFACTOR: convert Streamlit input/output to chat UI** in `app.py` with `st.session_state.messages`, `st.chat_input`, prior-message rendering through `st.chat_message`, assistant SQL/table rendering for in-scope questions, and assistant-only refusal for out-of-scope questions.
 - [x] **REFACTOR: add mandatory LIMIT guardrail** in the prompt and SQL validator so full-table or no-limit requests cannot execute unbounded queries; validate with prompt and SQL validator regression tests.
 - [x] **TRIANGULATE: connect app to minimal LangGraph flow** by wiring `app.py` to `src/sales_query_agent/agent_graph.py` without embedding SQL generation, validation, or SQLite access inside the UI layer.
-- [ ] **Validate Slice 4** by running, once files exist: `uv run pytest tests/test_app_smoke.py` and a manual Streamlit check using a representative question such as “Top 5 productos más vendidos en Medellín”.
+- [x] **Validate Slice 4 automated tests** with focused output-intent/helper tests and the full `uv run pytest` suite.
+- [x] **Validate Slice 4 manually** with a local Streamlit chat check using representative bar, pie, line, scatter, CSV, and Excel prompts with available AWS/Bedrock credentials.
 
 ### Slice 5 — Docker/Compose packaging, docs, and end-to-end verification
 
-- [x] **Implement partial Docker packaging** in `Dockerfile` and `compose.yaml` so the app installs from `pyproject.toml`/`uv.lock`, keeps secrets out of the image, runs the seed/init command before the app service, and keeps SQLite MCP execution inside the app-managed connector process for this slice.
+- [ ] **Keep packaging reproducible** so the app installs from `pyproject.toml`/`uv.lock`, keeps secrets out of runtime artifacts, runs the seed/init command before app use, and keeps SQLite MCP execution inside the app-managed connector process for this slice.
 - [ ] **Document runtime and architecture** in `README.md` and, if needed, `docs/architecture.md` or `docs/usage.md`, covering `uv`, deterministic data generation, Bedrock role, MCP role, Compose startup order, and first-slice limitations.
-- [ ] **Add verification guidance** to `README.md` and/or `openspec/changes/streamlit-sales-query-agent/verify-report.md` template notes with commands to run after files exist: targeted `uv run pytest ...`, `uv run streamlit run app.py`, and `docker compose up --build`.
-- [ ] **Run end-to-end verification** after implementation exists: seed generation, MCP connectivity, visible SQL in Streamlit, table output for a happy-path sales query, empty-result handling, unsupported output messaging, and Docker Compose startup.
+- [ ] **Add verification guidance** to `README.md` and/or `openspec/changes/streamlit-sales-query-agent/verify-report.md` template notes with commands to run after files exist and are verified.
+- [ ] **Run end-to-end verification** after implementation exists: seed generation, MCP connectivity, visible SQL in Streamlit, table output for a happy-path sales query, empty-result handling, chart/export output, and packaging startup.
 
 ## Recommended Apply Order
 

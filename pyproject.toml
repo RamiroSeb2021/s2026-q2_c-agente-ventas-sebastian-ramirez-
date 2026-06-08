@@ -10,6 +10,9 @@ dependencies = [
     "langgraph>=1.2.4",
     "mcp>=1.27.2",
     "mcp-server-sqlite>=2025.4.25",
+    "openpyxl==3.1.5",
+    "pandas==3.0.3",
+    "plotly==6.4.0",
     "streamlit>=1.58.0",
 ]
 
