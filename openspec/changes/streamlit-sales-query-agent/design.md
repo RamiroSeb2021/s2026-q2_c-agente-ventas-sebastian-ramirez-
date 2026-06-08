@@ -4,9 +4,7 @@
 
 This design defines the `streamlit-sales-query-agent` flow: a Streamlit app where a user asks a natural-language sales question, Amazon Bedrock generates a candidate SQLite `SELECT` query, the app validates the query deterministically, and query execution uses a SQLite MCP boundary over a locally generated SQLite database.
 
-Current implementation status: the chat UI, Bedrock adapter, SQL validator, Docker packaging, minimal LangGraph boundary, and `mcp-server-sqlite` execution boundary are implemented; richer multi-node orchestration remains future work.
-
-The first slice intentionally returns a visible SQL query and a table result only. Charts and CSV/Excel exports remain future extensions.
+Current implementation status: the chat UI, Bedrock adapter, SQL validator, minimal LangGraph boundary, `mcp-server-sqlite` execution boundary, and semantic chart/CSV/Excel outputs are implemented; richer multi-node orchestration and final packaging verification remain future work.
 
 ## Design Goals
 
@@ -17,10 +15,11 @@ The first slice intentionally returns a visible SQL query and a table result onl
 - Keep the Streamlit UI, Bedrock adapter, agent orchestration, SQL validation, MCP access, and data seeding modular.
 - Prepare for Docker/Compose packaging without embedding AWS credentials or generated data in source control.
 
-## Non-Goals for First Slice
+## Non-Goals for Current Slice
 
-- Charts, Plotly/Matplotlib/Altair visuals, and dashboard layout polish.
-- CSV/Excel export generation.
+- Arbitrary visualization code or arbitrary Plotly function selection from the model.
+- Persisted export files; current CSV/Excel exports are generated in memory for download.
+- Dashboard layout polish beyond chat-rendered tables, charts, and download controls.
 - Production database connectivity.
 - Multi-agent planning loops or complex tool routing beyond the SQL query flow.
 - LLM-generated datasets or LLM-driven database mutation.
@@ -46,7 +45,7 @@ Streamlit app
   src/sales_query_agent/mcp_client.py narrow MCP query wrapper
         │
         ▼
-User sees generated SQL + table result
+User sees generated SQL + dataframe + optional chart/download
 ```
 
 Bedrock never creates the dataset and never executes SQL. It only receives the user question plus schema context and returns a candidate SQL query or structured response containing SQL.
@@ -73,13 +72,14 @@ If implementation later chooses LangChain or Strands, it must preserve the same 
 4. User submits a question in Streamlit.
 5. Current runtime calls a minimal LangGraph boundary, which builds agent state with the user question, config, and Bedrock client before delegating to the query service.
 6. `src/sales_query_agent/bedrock_client.py` sends the prompt to Amazon Bedrock.
-7. Bedrock returns candidate SQL.
+7. Bedrock returns a structured query plan with `output_type` and candidate SQL, or `OUT_OF_SCOPE`.
 8. `src/sales_query_agent/sql_validation.py` validates the SQL.
 9. If valid, `src/sales_query_agent/mcp_client.py` calls the SQLite MCP connector's `read_query` tool.
 10. Streamlit displays the interaction in chat form:
     - the user question as a user chat message;
     - generated SQL, always visible inside the assistant message for successful in-scope queries;
-    - table results, empty-state message, or sanitized error inside the assistant message.
+    - dataframe results, empty-state message, or sanitized error inside the assistant message;
+    - Plotly chart, CSV download, or Excel download when requested semantically by Bedrock and rows exist.
 11. For out-of-scope questions, Streamlit displays only a polite assistant refusal and skips SQL/table rendering.
 
 ## Module Boundaries
@@ -96,7 +96,7 @@ Responsibilities:
 - Accept new questions with `st.chat_input`, then append and render the user message immediately.
 - Display generated SQL and result table inside the assistant chat message for successful in-scope sales questions.
 - Show a polite assistant refusal for out-of-scope questions, with no generated SQL block and no dataframe.
-- Show unsupported-output notice for chart/export requests in first slice.
+- Render chart/CSV/Excel outputs from the agent-provided `output_type`; do not inspect the natural-language prompt for keywords in the UI.
 - Call the agent graph; do not generate SQL, validate SQL, or query SQLite directly.
 - Do not implement a generic MCP administration UI. The MCP target is fixed/configured by environment or Compose, and Streamlit only displays/tests that configured connection.
 
@@ -106,7 +106,7 @@ Configuration loading and validation.
 
 Responsibilities:
 
-- Read `AWS_REGION`, `MODEL_ID`, and fixed/configured app/MCP settings from environment.
+- Read `AWS_REGION`, `BEDROCK_MODEL_ID`, and fixed/configured app/MCP settings from environment.
 - Define generated paths such as `data/sales.db`.
 - Define MCP connection settings such as transport, URL/command/service name, and database path according to the selected connector.
 - Validate required settings with clear user-facing messages.
@@ -121,6 +121,7 @@ Responsibilities:
 - Create the Bedrock runtime client.
 - Invoke the configured model.
 - Return the model response as text or structured candidate SQL.
+- Parse strict structured query plans containing `output_type` and `sql`.
 - Convert provider errors into sanitized application errors.
 
 Pattern to reuse: the previous Bedrock chat repo's separation of config and Bedrock client calls. Do not reuse its chat-specific prompt behavior directly.
@@ -134,7 +135,7 @@ Responsibilities:
 - Define the `ventas` schema context.
 - Instruct the model to produce one SQLite `SELECT` query only.
 - State that the model must not create, alter, insert, update, delete, or generate dataset rows.
-- Include output format guidance, ideally a small structured format for candidate SQL and optional unsupported-output intent.
+- Include output format guidance through a small structured format for semantic `output_type` plus candidate SQL.
 
 Prompting is not the safety boundary; it only reduces invalid outputs. The deterministic validator remains mandatory.
 
@@ -271,7 +272,7 @@ Docker rules:
 
 - Build app dependencies from `pyproject.toml` and `uv.lock` using `uv`.
 - Do not bake `.env`, AWS credentials, generated DB, or outputs into the image.
-- Provide `.env.example` with non-secret values such as `AWS_REGION` and `MODEL_ID`.
+- Provide `.env.example` with non-secret values such as `AWS_REGION` and `BEDROCK_MODEL_ID`.
 - For local Bedrock credentials, rely on AWS credential chain or mount `~/.aws:/root/.aws` in Compose when using AWS SSO; SSO token refresh can require write access to the cache directory.
 
 ## Dependency Plan with `uv`
@@ -364,7 +365,7 @@ If a slice approaches the budget, pause before continuing and propose a narrower
 Reuse:
 
 - modular `app.py` + `src/` separation;
-- config module for `AWS_REGION` and `MODEL_ID`;
+- config module for `AWS_REGION` and `BEDROCK_MODEL_ID`;
 - Bedrock client wrapper;
 - `.env.example` for non-secret config;
 - Docker/Compose pattern with runtime AWS configuration mount; AWS SSO may require write access for token cache refresh.
@@ -398,8 +399,8 @@ Avoid:
 
 After the first slice is working:
 
-- Add chart intent and chart rendering with Plotly, Matplotlib, or Altair.
-- Add CSV and Excel export actions.
+- Add richer chart customization beyond the safe `bar`, `pie`, `line`, and `scatter` matrix.
+- Add persisted export files; current CSV/Excel exports are generated in memory for download.
 - Add richer result summarization in natural language.
 - Add optional graph visualization for LangGraph flow documentation.
 - Add support for additional SQL backends if a future assignment requires it.
