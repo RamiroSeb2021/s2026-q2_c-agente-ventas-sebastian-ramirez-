@@ -27,7 +27,7 @@ from sales_query_agent.outputs import (
 
 
 st.set_page_config(
-    page_title="Sales Query Agent",
+    page_title="Agente de Ventas",
     page_icon="📊",
     layout="wide",
 )
@@ -43,12 +43,12 @@ def get_bedrock_client(region_name: str):
     return create_bedrock_runtime_client(region_name)
 
 
-st.title("Sales Query Agent")
-st.caption("Ask questions about the local ventas table and inspect the generated SQL.")
+st.title("Agente de Ventas")
+st.caption("Hacé preguntas sobre la tabla local ventas y revisá el SQL generado.")
 
 
 def render_mcp_diagnostics() -> None:
-    st.sidebar.header("MCP diagnostics")
+    st.sidebar.header("Diagnósticos MCP")
 
     try:
         config = get_config()
@@ -56,26 +56,26 @@ def render_mcp_diagnostics() -> None:
         st.sidebar.error(str(error))
         return
 
-    if st.sidebar.button("List tables"):
+    if st.sidebar.button("Listar tablas"):
         try:
             _ensure_database_exists(config.sales_db_path)
             tables = list_tables_via_mcp(config.sales_db_path)
             st.sidebar.write(tables)
         except Exception as error:
-            st.sidebar.error(_format_mcp_diagnostic_error(error, "list tables"))
+            st.sidebar.error(_format_mcp_diagnostic_error(error, "listar tablas"))
 
-    if st.sidebar.button("Describe ventas"):
+    if st.sidebar.button("Describir ventas"):
         try:
             _ensure_database_exists(config.sales_db_path)
             schema = describe_table_via_mcp("ventas", config.sales_db_path)
             st.sidebar.dataframe(schema, use_container_width=True)
         except Exception as error:
-            st.sidebar.error(_format_mcp_diagnostic_error(error, "describe ventas"))
+            st.sidebar.error(_format_mcp_diagnostic_error(error, "describir ventas"))
 
 
 def _ensure_database_exists(db_path: Path) -> None:
     if not db_path.exists():
-        raise FileNotFoundError("The configured sales database is missing. Run the seed command before checking MCP diagnostics.")
+        raise FileNotFoundError("No existe la base de datos de ventas configurada. Ejecutá el comando de seed antes de revisar diagnósticos MCP.")
 
 
 def _format_mcp_diagnostic_error(error: Exception, action: str) -> str:
@@ -83,9 +83,9 @@ def _format_mcp_diagnostic_error(error: Exception, action: str) -> str:
         return str(error)
 
     if isinstance(error, McpQueryError):
-        return f"Could not {action}: the MCP SQLite connector reported an error. {error}"
+        return f"No se pudo {action}: el conector MCP SQLite reportó un error. {error}"
 
-    return f"Could not {action}: the MCP SQLite connector is unavailable or the database could not be opened."
+    return f"No se pudo {action}: el conector MCP SQLite no está disponible o la base de datos no se pudo abrir."
 
 
 def render_assistant_message(message: dict) -> None:
@@ -95,15 +95,15 @@ def render_assistant_message(message: dict) -> None:
     if kind == "success":
         st.markdown(content)
         if message.get("generated_sql"):
-            st.subheader("Generated SQL")
+            st.subheader("SQL generado")
             st.code(message["generated_sql"], language="sql")
-        st.subheader("Results")
+        st.subheader("Resultados")
         if message["rows"]:
             dataframe = rows_to_dataframe(message["rows"], message.get("columns", []))
             st.dataframe(dataframe, use_container_width=True)
             render_requested_output(message)
         else:
-            st.info("The query ran successfully but returned no rows.")
+            st.info("La consulta se ejecutó correctamente, pero no devolvió filas.")
     elif kind == "info":
         st.info(content)
     else:
@@ -128,7 +128,7 @@ def render_requested_output(message: dict) -> None:
             st.info(chart.message)
     elif output_type == "csv":
         st.download_button(
-            label="Download CSV",
+            label="Descargar CSV",
             data=build_csv_bytes(message["rows"], message.get("columns", [])),
             file_name="sales-results.csv",
             mime="text/csv",
@@ -136,7 +136,7 @@ def render_requested_output(message: dict) -> None:
         )
     elif output_type == "excel":
         st.download_button(
-            label="Download Excel",
+            label="Descargar Excel",
             data=build_excel_bytes(message["rows"], message.get("columns", [])),
             file_name="sales-results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -198,19 +198,19 @@ def build_assistant_message(question: str) -> dict:
         return {
             "role": "assistant",
             "kind": "error",
-            "content": f"The MCP SQLite connector could not complete the query. {error}",
+            "content": f"El conector MCP SQLite no pudo completar la consulta. {error}",
         }
     except FileNotFoundError:
         return {
             "role": "assistant",
             "kind": "error",
-            "content": "The configured sales database is missing. Run the seed command before asking sales questions.",
+            "content": "No existe la base de datos de ventas configurada. Ejecutá el comando de seed antes de hacer preguntas.",
         }
     except Exception:
         return {
             "role": "assistant",
             "kind": "error",
-            "content": "The agent could not answer the question.",
+            "content": "El agente no pudo responder la pregunta.",
         }
 
 
@@ -224,7 +224,7 @@ for message in st.session_state.messages:
         else:
             render_assistant_message(message)
 
-if prompt := st.chat_input("Ask a sales question"):
+if prompt := st.chat_input("Hacé una pregunta sobre ventas"):
     user_message = {"role": "user", "content": prompt}
     st.session_state.messages.append(user_message)
 
@@ -232,7 +232,7 @@ if prompt := st.chat_input("Ask a sales question"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Generating SQL and querying sales data..."):
+        with st.spinner("Generando SQL y consultando datos de ventas..."):
             assistant_message = build_assistant_message(prompt)
             assistant_message["message_id"] = f"assistant-{len(st.session_state.messages)}"
 

@@ -96,7 +96,7 @@ def test_build_chart_rejects_results_that_are_not_two_columns():
     )
 
     assert chart.figure is None
-    assert "two-column result" in chart.message
+    assert "dos columnas" in chart.message
 
 
 def test_build_chart_rejects_non_numeric_second_column():
@@ -106,7 +106,7 @@ def test_build_chart_rejects_non_numeric_second_column():
     )
 
     assert chart.figure is None
-    assert "numeric values" in chart.message
+    assert "numérica" in chart.message
 
 
 def test_build_chart_rejects_scatter_with_non_numeric_first_column():
@@ -117,7 +117,7 @@ def test_build_chart_rejects_scatter_with_non_numeric_first_column():
     )
 
     assert chart.figure is None
-    assert "x and y metric columns" in chart.message
+    assert "columnas X e Y" in chart.message
 
 
 def test_build_chart_rejects_unsupported_chart_type():
@@ -128,7 +128,7 @@ def test_build_chart_rejects_unsupported_chart_type():
     )
 
     assert chart.figure is None
-    assert "unsupported chart type" in chart.message
+    assert "tipo no soportado" in chart.message
 
 
 def test_build_csv_bytes_exports_rows():

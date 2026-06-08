@@ -19,10 +19,10 @@ def rows_to_dataframe(rows: list[dict[str, Any]], columns: list[str]) -> pd.Data
 
 def build_chart(rows: list[dict[str, Any]], columns: list[str], chart_type: str = "bar") -> ChartResult:
     if not rows:
-        return ChartResult(figure=None, message="Charts need query rows to render.")
+        return ChartResult(figure=None, message="El gráfico necesita filas para renderizarse.")
 
     if chart_type not in {"bar", "pie", "line", "scatter"}:
-        return ChartResult(figure=None, message="Chart output received an unsupported chart type.")
+        return ChartResult(figure=None, message="El gráfico recibió un tipo no soportado.")
 
     if chart_type == "scatter":
         return _build_scatter_chart(rows, columns)
@@ -30,7 +30,7 @@ def build_chart(rows: list[dict[str, Any]], columns: list[str], chart_type: str 
     if len(columns) != 2:
         return ChartResult(
             figure=None,
-            message="Chart output needs a two-column result for the selected chart type.",
+            message="Este tipo de gráfico necesita un resultado de dos columnas.",
         )
 
     first_column, second_column = columns
@@ -40,7 +40,7 @@ def build_chart(rows: list[dict[str, Any]], columns: list[str], chart_type: str 
     if numeric_values.isna().any():
         return ChartResult(
             figure=None,
-            message=f"{chart_type.capitalize()} chart output needs the second result column to contain numeric values.",
+            message="Este tipo de gráfico necesita que la segunda columna sea numérica.",
         )
 
     dataframe[second_column] = numeric_values
@@ -64,7 +64,7 @@ def _build_scatter_chart(rows: list[dict[str, Any]], columns: list[str]) -> Char
     else:
         return ChartResult(
             figure=None,
-            message="Scatter chart output needs either two numeric columns or one label column plus two numeric columns.",
+            message="El gráfico de dispersión necesita dos columnas numéricas o una etiqueta más dos columnas numéricas.",
         )
 
     dataframe = rows_to_dataframe(rows, columns)
@@ -73,7 +73,7 @@ def _build_scatter_chart(rows: list[dict[str, Any]], columns: list[str]) -> Char
     if numeric_x.isna().any() or numeric_y.isna().any():
         return ChartResult(
             figure=None,
-            message="Scatter chart output needs its x and y metric columns to contain numeric values.",
+            message="El gráfico de dispersión necesita que sus columnas X e Y sean numéricas.",
         )
 
     dataframe[x_column] = numeric_x

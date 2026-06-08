@@ -1,24 +1,18 @@
-# Sales Query Agent
+# Agente de Ventas
 
-Practical assignment scaffold for an Agentic AI sales analysis app.
+Guía de uso para la aplicación práctica de análisis de ventas con IA agentiva. El flujo de la app permite hacer preguntas en lenguaje natural sobre la tabla SQLite `ventas` y visualizar respuestas en Streamlit.
 
-## Current verified state
+## Qué podés probar
 
-- Deterministic SQLite seed script for the `ventas` table.
-- Faker-generated Colombian seller and branch data.
-- Pytest coverage for database creation, schema, row count, and required values.
-- Read-only SQL validation and execution against the local SQLite database.
-- Bedrock SQL-generation prompt/client boundary with mocked test coverage.
-- Query service that connects natural-language questions to generated SQL and query results.
-- Chat-style Streamlit UI in `app.py` for asking questions and viewing generated SQL plus table results.
-- Streamlit chat output can render semantic Bedrock-selected table, chart, CSV, and Excel responses, including deterministic Plotly bar, pie, line, and scatter charts.
-- Minimal LangGraph agent boundary before the query service.
-- SQLite query execution through the `mcp-server-sqlite` MCP server using its `read_query` tool.
-- Sidebar MCP diagnostics can list tables and describe `ventas`; natural-language chat remains limited to sales-analysis questions.
+- Preguntas de ventas en lenguaje natural.
+- SQL generado visible para revisar qué ejecuta el agente.
+- Resultados en tabla.
+- Gráficos Plotly seguros: barras, pastel, línea y dispersión.
+- Descargas CSV y Excel.
 
-## Configuration
+## Configuración
 
-Copy `.env.example` values into your shell or local environment before running the app:
+Copiá `.env.example` o exportá estas variables en tu shell:
 
 ```bash
 export AWS_REGION=us-east-1
@@ -26,57 +20,95 @@ export BEDROCK_MODEL_ID=anthropic.claude-3-haiku-20240307-v1:0
 export SALES_DB_PATH=data/sales.db
 ```
 
-AWS credentials must come from your normal local AWS configuration or environment. Do not commit credentials.
+Las credenciales de AWS deben venir de tu configuración local normal, por ejemplo AWS CLI/SSO o variables de entorno. No guardes credenciales en el repo.
 
-## Verified commands
+## Comandos verificados
+
+Generar la base local:
 
 ```bash
 uv run python scripts/seed_database.py
+```
+
+Ejecutar la suite de tests:
+
+```bash
 uv run pytest
 ```
 
-## Local app command
+## Prueba manual de Streamlit
 
-```bash
-uv run streamlit run app.py
+La UI vive en `app.py`. Levantala con Streamlit desde el entorno del proyecto y probá los prompts de abajo con credenciales Bedrock configuradas.
+
+## Prompts de prueba
+
+Tabla:
+
+```text
+Muéstrame los 5 productos más vendidos
 ```
 
-This command is available for local runtime checks. Use `uv run pytest` as the automated verification command; full chat-to-Bedrock-to-MCP end-to-end verification is still tracked as remaining manual work.
+Gráfico de barras:
 
-## SQL validation scope
+```text
+Hazme un gráfico de barras con la cantidad vendida por producto
+```
 
-SQL validation is intentionally conservative in this slice. It uses token and regex checks rather than a full SQL parser, and it only permits a narrow read-only subset:
+Gráfico de pastel:
 
-- one SQL statement;
-- `SELECT` only;
-- references to the `ventas` table and its allowlisted columns only;
-- no SQL comments;
-- blocked write/admin keywords rejected;
-- a numeric `LIMIT` clause required;
-- execution through the MCP SQLite `read_query` tool after validation.
+```text
+Muéstrame un gráfico de pastel con la participación de cantidad vendida por producto
+```
 
-## Output formats
+Gráfico de línea:
 
-Bedrock returns a structured query plan with `output_type`, `sql`, and optional `chart_type` for chart outputs. The app uses that semantic plan instead of Streamlit keyword checks.
+```text
+Grafica en línea la cantidad total vendida por mes
+```
 
-Supported successful SQL-backed outputs:
+Gráfico de dispersión:
 
-- `table`: show generated SQL and dataframe results.
-- `chart`: show generated SQL, dataframe results, and a deterministic Plotly chart selected from the validated `chart_type`.
-- `csv`: show generated SQL, dataframe results, and a CSV download button.
-- `excel`: show generated SQL, dataframe results, and an Excel download button.
+```text
+Grafica la relación entre cantidad vendida e ingresos por producto
+```
 
-If a query returns no rows, the UI shows an empty-result state and skips chart/download rendering.
+CSV:
 
-Supported safe chart matrix:
+```text
+Dame en CSV el total vendido por vendedor
+```
 
-| `chart_type` | Intended use | Required SQL result shape |
+Excel:
+
+```text
+Exporta a Excel las ventas totales por sede
+```
+
+## Formatos soportados
+
+Bedrock devuelve un plan JSON estricto con `output_type`, `sql` y, para gráficos, `chart_type`. Streamlit renderiza ese plan validado; no decide el tipo de salida con keywords.
+
+| Salida | Comportamiento |
+| --- | --- |
+| `table` | Muestra SQL generado y dataframe. |
+| `chart` | Muestra SQL, dataframe y gráfico Plotly. |
+| `csv` | Muestra SQL, dataframe y botón de descarga CSV. |
+| `excel` | Muestra SQL, dataframe y botón de descarga Excel. |
+
+Tipos de gráfico permitidos:
+
+| `chart_type` | Uso | Forma esperada del resultado SQL |
 | --- | --- | --- |
-| `bar` | Category ranking or comparison | exactly 2 columns: category + numeric value |
-| `pie` | Category composition or participation | exactly 2 columns: category + numeric value |
-| `line` | Temporal/month/date trend | exactly 2 columns: ordered category/date + numeric value |
-| `scatter` | Relationship between two metrics | 2 numeric columns, or 1 label column plus 2 numeric columns |
+| `bar` | Comparaciones o rankings | categoría + valor numérico |
+| `pie` | Participación por categoría | categoría + valor numérico |
+| `line` | Tendencias por fecha/mes | fecha/categoría ordenada + valor numérico |
+| `scatter` | Relación entre dos métricas | dos columnas numéricas, o etiqueta + dos columnas numéricas |
 
-When Bedrock omits `chart_type` for a chart response, the app defaults to `bar` for backwards compatibility. Unsupported chart types are rejected before rendering; the app never executes arbitrary Plotly function names from the model.
+## Limitaciones
 
-SQLite query execution goes through `mcp-server-sqlite`; SQL validation still runs before the MCP tool call.
+- El validador SQL es conservador y usa reglas por tokens/regex; no es un parser SQL completo.
+- El agente solo responde sobre la tabla `ventas`.
+- No se exponen herramientas MCP peligrosas como `write_query` o `create_table`.
+- Los gráficos usan una matriz segura y fija de Plotly; el modelo no puede elegir funciones arbitrarias.
+- Si una consulta no devuelve filas, no se renderiza gráfico ni botón de descarga.
+- Docker/Compose no se documenta como verificación final en este README; usá `uv run pytest` y la prueba manual de Streamlit como validación principal.

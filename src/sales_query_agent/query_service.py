@@ -19,7 +19,7 @@ class SalesQuestionResult:
     chart_type: ChartType | None
     columns: list[str]
     rows: list[dict[str, Any]]
-    response_text: str = "Here is the SQL I generated and the matching sales data."
+    response_text: str = "Este es el SQL generado y los datos de ventas encontrados."
 
 
 def answer_sales_question(
