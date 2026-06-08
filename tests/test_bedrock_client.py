@@ -1,6 +1,12 @@
 import pytest
+from botocore.exceptions import ClientError
 
-from sales_query_agent.bedrock_client import generate_sql_with_bedrock
+from sales_query_agent.bedrock_client import (
+    BedrockProviderError,
+    OutOfScopeQuestionError,
+    UnsupportedOutputError,
+    generate_sql_with_bedrock,
+)
 from sales_query_agent.config import AppConfig
 
 
@@ -20,6 +26,19 @@ class FakeBedrockClient:
                 }
             }
         }
+
+
+class FailingBedrockClient:
+    def converse(self, **kwargs):
+        raise ClientError(
+            {
+                "Error": {
+                    "Code": "AccessDeniedException",
+                    "Message": "raw provider detail that should not be shown",
+                }
+            },
+            "Converse",
+        )
 
 
 def test_generate_sql_with_bedrock_calls_converse_with_prompt(tmp_path):
@@ -95,7 +114,57 @@ def test_generate_sql_with_bedrock_rejects_empty_model_response(tmp_path):
         )
 
 
-def test_generate_sql_with_bedrock_rejects_unsafe_model_sql(tmp_path):
+def test_generate_sql_with_bedrock_sanitizes_client_error_message(tmp_path):
+    config = AppConfig(
+        aws_region="us-east-1",
+        bedrock_model_id="anthropic.claude-3-haiku",
+        sales_db_path=tmp_path / "sales.db",
+    )
+
+    with pytest.raises(BedrockProviderError) as error:
+        generate_sql_with_bedrock(
+            question="Muestra ventas",
+            config=config,
+            bedrock_client=FailingBedrockClient(),
+        )
+
+    assert "AccessDeniedException" in str(error.value)
+    assert "raw provider detail" not in str(error.value)
+
+
+def test_generate_sql_with_bedrock_rejects_out_of_scope_sentinel(tmp_path):
+    config = AppConfig(
+        aws_region="us-east-1",
+        bedrock_model_id="anthropic.claude-3-haiku",
+        sales_db_path=tmp_path / "sales.db",
+    )
+    client = FakeBedrockClient("OUT_OF_SCOPE")
+
+    with pytest.raises(OutOfScopeQuestionError, match="sales data in the ventas table"):
+        generate_sql_with_bedrock(
+            question="hola",
+            config=config,
+            bedrock_client=client,
+        )
+
+
+def test_generate_sql_with_bedrock_rejects_unsupported_output_sentinel(tmp_path):
+    config = AppConfig(
+        aws_region="us-east-1",
+        bedrock_model_id="anthropic.claude-3-haiku",
+        sales_db_path=tmp_path / "sales.db",
+    )
+    client = FakeBedrockClient("UNSUPPORTED_OUTPUT")
+
+    with pytest.raises(UnsupportedOutputError, match="not supported in this slice"):
+        generate_sql_with_bedrock(
+            question="hazme un gráfico de ventas por sede",
+            config=config,
+            bedrock_client=client,
+        )
+
+
+def test_generate_sql_with_bedrock_returns_candidate_sql_for_orchestration_validation(tmp_path):
     config = AppConfig(
         aws_region="us-east-1",
         bedrock_model_id="anthropic.claude-3-haiku",
@@ -103,15 +172,16 @@ def test_generate_sql_with_bedrock_rejects_unsafe_model_sql(tmp_path):
     )
     client = FakeBedrockClient("DROP TABLE ventas")
 
-    with pytest.raises(ValueError, match="Bedrock returned unsafe SQL"):
-        generate_sql_with_bedrock(
-            question="Borra la tabla",
-            config=config,
-            bedrock_client=client,
-        )
+    sql = generate_sql_with_bedrock(
+        question="Borra la tabla",
+        config=config,
+        bedrock_client=client,
+    )
+
+    assert sql == "DROP TABLE ventas"
 
 
-def test_generate_sql_with_bedrock_rejects_multiple_statement_model_sql(tmp_path):
+def test_generate_sql_with_bedrock_returns_multiple_statement_candidate(tmp_path):
     config = AppConfig(
         aws_region="us-east-1",
         bedrock_model_id="anthropic.claude-3-haiku",
@@ -119,15 +189,16 @@ def test_generate_sql_with_bedrock_rejects_multiple_statement_model_sql(tmp_path
     )
     client = FakeBedrockClient("SELECT * FROM ventas; DROP TABLE ventas;")
 
-    with pytest.raises(ValueError, match="Multiple statements are not allowed"):
-        generate_sql_with_bedrock(
-            question="Muestra ventas",
-            config=config,
-            bedrock_client=client,
-        )
+    sql = generate_sql_with_bedrock(
+        question="Muestra ventas",
+        config=config,
+        bedrock_client=client,
+    )
+
+    assert sql == "SELECT * FROM ventas; DROP TABLE ventas;"
 
 
-def test_generate_sql_with_bedrock_rejects_other_tables(tmp_path):
+def test_generate_sql_with_bedrock_returns_other_table_candidate(tmp_path):
     config = AppConfig(
         aws_region="us-east-1",
         bedrock_model_id="anthropic.claude-3-haiku",
@@ -135,9 +206,10 @@ def test_generate_sql_with_bedrock_rejects_other_tables(tmp_path):
     )
     client = FakeBedrockClient("SELECT * FROM usuarios")
 
-    with pytest.raises(ValueError, match="Only the ventas table is allowed"):
-        generate_sql_with_bedrock(
-            question="Muestra usuarios",
-            config=config,
-            bedrock_client=client,
-        )
+    sql = generate_sql_with_bedrock(
+        question="Muestra usuarios",
+        config=config,
+        bedrock_client=client,
+    )
+
+    assert sql == "SELECT * FROM usuarios"

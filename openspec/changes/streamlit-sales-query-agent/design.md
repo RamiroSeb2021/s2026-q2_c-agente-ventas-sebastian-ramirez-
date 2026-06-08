@@ -2,7 +2,9 @@
 
 ## Summary
 
-This design defines the first implementation slice for `streamlit-sales-query-agent`: a Streamlit app where a user asks a natural-language sales question, Amazon Bedrock generates a candidate SQLite `SELECT` query, the app validates the query deterministically, and query execution happens through a SQLite MCP boundary over a locally generated SQLite database.
+This design defines the `streamlit-sales-query-agent` flow: a Streamlit app where a user asks a natural-language sales question, Amazon Bedrock generates a candidate SQLite `SELECT` query, the app validates the query deterministically, and query execution uses a SQLite MCP boundary over a locally generated SQLite database.
+
+Current implementation status: the chat UI, Bedrock adapter, SQL validator, Docker packaging, minimal LangGraph boundary, and `mcp-server-sqlite` execution boundary are implemented; richer multi-node orchestration remains future work.
 
 The first slice intentionally returns a visible SQL query and a table result only. Charts and CSV/Excel exports remain future extensions.
 
@@ -11,7 +13,7 @@ The first slice intentionally returns a visible SQL query and a table result onl
 - Prove the core assignment flow end-to-end with a small, reviewable implementation.
 - Use Bedrock for semantic intent and SQL generation only.
 - Generate reproducible simulated sales data locally with a fixed-seed Python script.
-- Execute validated SQL through an MCP SQLite connector, not direct app-side SQLite querying.
+- Preserve a swappable SQL execution boundary around the current `mcp-server-sqlite` connector.
 - Keep the Streamlit UI, Bedrock adapter, agent orchestration, SQL validation, MCP access, and data seeding modular.
 - Prepare for Docker/Compose packaging without embedding AWS credentials or generated data in source control.
 
@@ -32,16 +34,16 @@ scripts/seed_database.py
         │
         ▼
 SQLite MCP server/connector
-  exposes generated SQLite DB as an MCP tool/resource
+  mcp-server-sqlite read_query tool
         │
         ▼
 Streamlit app
   app.py UI shell
-  src/agent/graph.py orchestration
-  src/bedrock_client.py Bedrock adapter
-  src/prompts.py SQL-generation prompts
-  src/sql_validation.py deterministic validator
-  src/mcp_client.py narrow MCP query wrapper
+  src/sales_query_agent/agent_graph.py minimal LangGraph boundary
+  src/sales_query_agent/bedrock_client.py Bedrock adapter
+  src/sales_query_agent/prompts.py SQL-generation prompts
+  src/sales_query_agent/sql_validation.py deterministic validator
+  src/sales_query_agent/mcp_client.py narrow MCP query wrapper
         │
         ▼
 User sees generated SQL + table result
@@ -64,19 +66,21 @@ If implementation later chooses LangChain or Strands, it must preserve the same 
 
 ## Runtime Data Flow
 
-1. Local setup or Compose runs the deterministic seed command.
+1. Local setup runs the deterministic seed command before app startup.
 2. `scripts/seed_database.py` creates/refreshes the generated SQLite artifact:
    - `data/sales.db`
-3. SQLite MCP connector starts against the generated database path.
+3. Current runtime launches `mcp-server-sqlite` against the generated database path through the MCP Python SDK.
 4. User submits a question in Streamlit.
-5. `src/agent/graph.py` builds agent state with the user question and schema description.
-6. `src/bedrock_client.py` sends the prompt to Amazon Bedrock.
+5. Current runtime calls a minimal LangGraph boundary, which builds agent state with the user question, config, and Bedrock client before delegating to the query service.
+6. `src/sales_query_agent/bedrock_client.py` sends the prompt to Amazon Bedrock.
 7. Bedrock returns candidate SQL.
-8. `src/sql_validation.py` validates the SQL.
-9. If valid, `src/mcp_client.py` executes the query through the SQLite MCP connector.
-10. Streamlit displays:
-    - generated SQL, always visible;
-    - table results, empty-state message, or sanitized error.
+8. `src/sales_query_agent/sql_validation.py` validates the SQL.
+9. If valid, `src/sales_query_agent/mcp_client.py` calls the SQLite MCP connector's `read_query` tool.
+10. Streamlit displays the interaction in chat form:
+    - the user question as a user chat message;
+    - generated SQL, always visible inside the assistant message for successful in-scope queries;
+    - table results, empty-state message, or sanitized error inside the assistant message.
+11. For out-of-scope questions, Streamlit displays only a polite assistant refusal and skips SQL/table rendering.
 
 ## Module Boundaries
 
@@ -86,14 +90,17 @@ Streamlit entrypoint and UI composition only.
 
 Responsibilities:
 
-- Page title, prompt input, loading/error states.
+- Page title, chat prompt input, loading/error states.
 - Sidebar/settings panel with configured AWS region/model, generated DB path, MCP connection status, and a "test MCP connection" control.
-- Display generated SQL and result table.
+- Maintain `st.session_state.messages` and render prior conversation turns with `st.chat_message`.
+- Accept new questions with `st.chat_input`, then append and render the user message immediately.
+- Display generated SQL and result table inside the assistant chat message for successful in-scope sales questions.
+- Show a polite assistant refusal for out-of-scope questions, with no generated SQL block and no dataframe.
 - Show unsupported-output notice for chart/export requests in first slice.
 - Call the agent graph; do not generate SQL, validate SQL, or query SQLite directly.
 - Do not implement a generic MCP administration UI. The MCP target is fixed/configured by environment or Compose, and Streamlit only displays/tests that configured connection.
 
-### `src/config.py`
+### `src/sales_query_agent/config.py`
 
 Configuration loading and validation.
 
@@ -105,7 +112,7 @@ Responsibilities:
 - Validate required settings with clear user-facing messages.
 - Never read or store AWS secret values directly; rely on the AWS credential chain.
 
-### `src/bedrock_client.py` or `src/llm.py`
+### `src/sales_query_agent/bedrock_client.py`
 
 Bedrock adapter.
 
@@ -118,7 +125,7 @@ Responsibilities:
 
 Pattern to reuse: the previous Bedrock chat repo's separation of config and Bedrock client calls. Do not reuse its chat-specific prompt behavior directly.
 
-### `src/prompts.py`
+### `src/sales_query_agent/prompts.py`
 
 Prompt and schema instructions.
 
@@ -131,31 +138,24 @@ Responsibilities:
 
 Prompting is not the safety boundary; it only reduces invalid outputs. The deterministic validator remains mandatory.
 
-### `src/agent/graph.py`
+### `src/sales_query_agent/agent_graph.py`
 
-LangGraph orchestration.
+Minimal LangGraph orchestration boundary implemented in the current slice.
 
-Proposed state fields:
+Current state fields:
 
 - `question: str`
-- `generated_sql: str | None`
-- `validation_error: str | None`
-- `rows: list[dict] | None`
-- `columns: list[str] | None`
-- `user_message: str | None`
-- `unsupported_output_requested: bool`
-- `error: str | None`
+- `config: AppConfig`
+- `bedrock_client: BedrockConverseClient`
+- `result: SalesQuestionResult | None`
 
-Proposed nodes:
+Current node:
 
-1. `generate_sql`: call Bedrock with schema-aware prompt.
-2. `validate_sql`: call deterministic validator.
-3. `execute_sql_via_mcp`: call narrow MCP wrapper only if validation passed.
-4. `format_result`: normalize success, empty result, or error for the UI.
+1. `answer_sales_question`: delegates to the existing query service and returns the result in graph state.
 
-The graph must not call the MCP execution node when validation fails.
+Future MCP work should expand this graph into separate generate, validate, execute-via-MCP, and format nodes. The graph must not call any execution node when validation fails.
 
-### `src/sql_validation.py`
+### `src/sales_query_agent/sql_validation.py`
 
 Deterministic SQL validator independent of Bedrock.
 
@@ -182,22 +182,22 @@ Validation rules:
 - Reject multiple statements and comments that hide additional statements.
 - Allow common read-only aggregate/scalar functions needed for the assignment, such as `SUM`, `COUNT`, `AVG`, `MIN`, `MAX`, date extraction supported by SQLite, and arithmetic expressions over allowed columns.
 
-Implementation note for later apply phase: use a SQL parser library when feasible instead of fragile keyword-only checks. If a library is not selected, keep the first validator conservative and document limitations.
+Current implementation note: the first validator is intentionally conservative token/regex validation, not a complete SQL parser. Its safety boundary is the combination of single-statement `SELECT`, schema allowlist, blocked keyword rejection, comment rejection, required numeric `LIMIT`, and execution through the MCP SQLite `read_query` tool only. Use a SQL parser library in a later slice if broader SQL support is needed.
 
-### `src/mcp_client.py` or `src/sql_tool.py`
+### `src/sales_query_agent/mcp_client.py`
 
 Narrow SQLite MCP wrapper.
 
 Responsibilities:
 
-- Connect to the fixed/configured SQLite MCP server/connector.
-- Expose only two app-level operations: `check_connection()` for UI status/testing and `execute_readonly_sales_query(sql)` for validated query execution.
-- Accept only SQL that has passed `src/sql_validation.py`.
+- Launch and connect to `mcp-server-sqlite` with the fixed generated database path.
+- Expose a narrow app-level surface: validated `execute_readonly_sales_query(sql)` for chat execution plus fixed sidebar diagnostics for listing configured tables and describing `ventas`.
+- Accept only SQL that has passed `src/sales_query_agent/sql_validation.py`.
 - Return normalized columns and rows for Streamlit.
 - Surface connector failures without exposing stack traces or secrets in the UI.
 - Keep user configuration out of the browser: no arbitrary MCP command/transport registration from Streamlit in the first slice.
 
-This wrapper is the only authoritative first-slice query execution path. Direct SQLite access is allowed only inside deterministic seed/init code.
+This wrapper is the authoritative query execution path for sales queries. The older direct SQLite helper remains available for low-level/local tests but is no longer used by the query service.
 
 ### `scripts/seed_database.py`
 
@@ -214,7 +214,7 @@ The script is source of truth; `data/sales.db` is a generated artifact ignored b
 
 ## SQLite MCP Connector Decision
 
-The design requires a preexisting SQLite MCP connector, but this phase does not verify a specific package by installing or running it.
+The selected connector is `mcp-server-sqlite`, run through `uv run --frozen --no-dev mcp-server-sqlite --db-path <path>` and called with the MCP Python SDK.
 
 Decision for design: **keep the connector choice as an explicit implementation decision**, with these evaluation criteria:
 
@@ -232,7 +232,7 @@ Candidate classes to evaluate during apply:
 - A Docker-capable SQLite MCP server as a separate Compose service.
 - A Python MCP SQLite server installed through `uv` and launched as a managed subprocess.
 
-Do not silently replace MCP with direct `sqlite3` querying. If the selected connector cannot be made to work in time, implementation must document the deferral and keep `src/mcp_client.py` as a swappable boundary, but that would be a risk against assignment acceptance.
+Do not silently replace MCP with direct `sqlite3` querying. If the selected connector cannot be made to work in time, implementation must document the deferral and keep `src/sales_query_agent/mcp_client.py` as a swappable boundary, but that would be a risk against assignment acceptance.
 
 ## Docker / Compose Topology
 
@@ -254,7 +254,7 @@ compose.yaml
     depends_on: sqlite-mcp
     env_file: .env
     environment: fixed MCP connection settings
-    mounts: ~/.aws:/root/.aws:ro for local dev, if needed
+    mounts: ~/.aws:/root/.aws for AWS SSO local dev, if needed
     serves: Streamlit on 8501
     UI: shows MCP status/test, but does not let users register arbitrary MCP servers
 ```
@@ -272,7 +272,7 @@ Docker rules:
 - Build app dependencies from `pyproject.toml` and `uv.lock` using `uv`.
 - Do not bake `.env`, AWS credentials, generated DB, or outputs into the image.
 - Provide `.env.example` with non-secret values such as `AWS_REGION` and `MODEL_ID`.
-- For local Bedrock credentials, rely on AWS credential chain or mount `~/.aws:/root/.aws:ro` in Compose.
+- For local Bedrock credentials, rely on AWS credential chain or mount `~/.aws:/root/.aws` in Compose when using AWS SSO; SSO token refresh can require write access to the cache directory.
 
 ## Dependency Plan with `uv`
 
@@ -312,8 +312,9 @@ Expected error classes:
 Security boundaries:
 
 - Bedrock output is untrusted until validated.
-- MCP execution receives only validated SQL.
-- No direct app-side SQL execution in first-slice query flow.
+- MCP SQLite execution receives only validated SQL.
+- Valid sales SQL must include a numeric `LIMIT` clause so prompt or export-like requests cannot dump the full table unbounded.
+- SQLite query execution goes through the MCP `read_query` tool after validation; do not bypass validation or embed SQL execution in the UI.
 - No AWS credentials in repo, Docker image, generated files, or logs.
 - No generic shell tools or `eval`-based dispatch.
 
@@ -330,14 +331,17 @@ During apply/verify, add focused validation appropriate to the first slice:
   - rejects DML/DDL;
   - rejects multi-statement SQL;
   - rejects unknown tables and columns;
+  - rejects otherwise valid sales queries without `LIMIT`;
   - rejects `PRAGMA`, `ATTACH`, and `DETACH`.
 - Unit or integration test for MCP wrapper:
   - wrapper does not execute when validation fails;
   - wrapper handles connector errors cleanly.
 - Manual Streamlit validation:
   - ask “Top 5 productos más vendidos en Medellín”;
+  - verify the user question appears as a user chat message;
   - verify generated SQL is visible;
-  - verify table output appears.
+  - verify table output appears in the assistant chat message;
+  - ask an out-of-scope question and verify the assistant refuses without showing SQL or a dataframe.
 
 Command names must not be documented as verified until implementation files exist and commands have run successfully.
 
@@ -347,7 +351,7 @@ The session review budget is 400 changed lines. Implementation should be split i
 
 1. Scaffold and seed script with tests.
 2. Bedrock/config/prompts and SQL validator with tests.
-3. MCP wrapper and LangGraph flow.
+3. Minimal LangGraph boundary, then MCP wrapper and richer graph flow.
 4. Streamlit UI integration.
 5. Docker/Compose packaging.
 
@@ -363,7 +367,7 @@ Reuse:
 - config module for `AWS_REGION` and `MODEL_ID`;
 - Bedrock client wrapper;
 - `.env.example` for non-secret config;
-- Docker/Compose pattern with read-only AWS credential mount.
+- Docker/Compose pattern with runtime AWS configuration mount; AWS SSO may require write access for token cache refresh.
 
 Do not copy blindly:
 

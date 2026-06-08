@@ -1,0 +1,25 @@
+services:
+  seed:
+    build: .
+    image: sales-query-agent:local
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["uv", "run", "--frozen", "--no-dev", "python", "scripts/seed_database.py"]
+
+  app:
+    build: .
+    image: sales-query-agent:local
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      AWS_SDK_LOAD_CONFIG: "1"
+    volumes:
+      - ./data:/app/data
+      - ${HOME}/.aws:/root/.aws

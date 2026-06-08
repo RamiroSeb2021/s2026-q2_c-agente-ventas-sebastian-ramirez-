@@ -2,13 +2,13 @@
 
 ## Motivation & Problem
 
-The repository now has a verified Slice 1 Python/uv scaffold and deterministic SQLite `ventas` seed, but still lacks a runnable Streamlit application for the Agentic AI sales analysis assignment. To incrementally build the solution and minimize risk, the remaining vertical slices must prove the core assumptions: using Amazon Bedrock for semantic intent and SQL generation, querying a local SQL database through MCP, and rendering the result in a Streamlit UI, all managed via `uv`.
+The repository now has a verified Python/uv scaffold, deterministic SQLite `ventas` seed, Bedrock SQL generation, and a chat-style Streamlit path. The remaining vertical slices must keep improving the solution toward the full assignment target: Amazon Bedrock for semantic intent and SQL generation, a local SQL database exposed through MCP, and Streamlit output rendering, all managed via `uv`.
 
-The assignment explicitly recommends MCP-compatible connectors for database access. Therefore, this first slice should not treat SQLite as a private in-process implementation detail. It should model SQLite as a local SQL system exposed to the app through a preexisting SQLite MCP server or connector.
+The assignment explicitly recommends MCP-compatible connectors for database access. Current implementation now uses `mcp-server-sqlite` through the MCP Python SDK and its `read_query` tool after deterministic SQL validation.
 
 ## Proposed Change
 
-Implement the first functional slice of the sales agent. The application will use Streamlit for the user interface and Amazon Bedrock to translate natural-language sales questions into validated SQLite `SELECT` queries. Sales data will be generated locally by a deterministic Python seed script and loaded into a generated local SQLite database. SQL execution will happen through a SQLite MCP server/connector, not by directly querying SQLite from the Streamlit app.
+Implement the current functional Streamlit/Bedrock/MCP slice of the sales agent. The application uses Streamlit for the user interface, a minimal LangGraph boundary for agent-framework routing, and Amazon Bedrock to translate natural-language sales questions into validated SQLite `SELECT` queries. Sales data is generated locally by a deterministic Python seed script and loaded into a generated local SQLite database. SQL execution happens through the `mcp-server-sqlite` MCP server via the `read_query` tool.
 
 The UI will explicitly show the generated SQL for transparency and educational purposes, followed by the query result table.
 
@@ -17,10 +17,10 @@ The UI will explicitly show the generated SQL for transparency and educational p
 - **Dependency Management**: Use the existing `uv` project configuration in `pyproject.toml` and `uv.lock`.
 - **Data Generation**: Reuse the completed deterministic `scripts/seed_database.py` seed script, which creates the local SQLite `ventas` table with fixed-seed sample data.
 - **Generated Data Artifacts**: Treat `data/sales.db` as a reproducible runtime artifact, not source of truth.
-- **MCP SQL Access**: Use a preexisting SQLite MCP server/connector to expose the generated SQLite database to the app. The Streamlit app should act as the MCP client or use a framework integration that calls the MCP tool boundary.
+- **MCP SQL Access**: Use `mcp-server-sqlite` to expose the generated SQLite database to the app through MCP; the Streamlit app continues calling the agent boundary rather than database code directly.
 - **LLM Integration**: Use Amazon Bedrock to detect user intent and generate valid SQLite queries over the known `ventas` schema.
-- **SQL Safety**: Validate generated SQL before MCP execution. Allow only a single read-only `SELECT` statement against the `ventas` table and approved columns/functions.
-- **User Interface**: Build a Streamlit app where users can input natural-language sales questions.
+- **SQL Safety**: Validate generated SQL before MCP execution. Allow only a single read-only `SELECT` statement against the `ventas` table and approved columns/functions, require a numeric `LIMIT`, reject comments and blocked write/admin keywords, and execute only through the MCP SQLite `read_query` tool.
+- **User Interface**: Build a chat-style Streamlit app where users can submit natural-language sales questions with `st.chat_input` and review prior user/assistant messages.
 - **Transparency**: Always display the generated SQL query to the user before the results.
 - **Output**: Display the query results as a data table in the UI.
 - **Architecture**: Begin setting up the basic agent framework (LangChain/LangGraph/Strands) as required by the assignment constraints, while keeping Bedrock, SQL validation, MCP access, and Streamlit UI modular.
@@ -58,22 +58,23 @@ Docker packaging remains a target for the assignment. The design should plan for
 - a seed/init command that runs the deterministic Python script before the app and MCP server depend on the generated DB;
 - a shared read/write data volume or bind mount for generated data files and the generated SQLite database;
 - `.env` for non-secret app configuration such as `AWS_REGION` and `MODEL_ID`;
-- AWS credentials provided through the normal AWS credential chain, for local development commonly by mounting `~/.aws:/root/.aws:ro`;
+- AWS credentials provided through the normal AWS credential chain; for local AWS SSO development, Compose may mount `~/.aws:/root/.aws` read-write so botocore can refresh SSO token cache files;
 - no AWS credentials, `.env`, generated DB files, or runtime exports committed to the repository.
 
 ## User Flow
 
 1. User prepares dependencies with `uv` using the existing `pyproject.toml` and `uv.lock`.
 2. User launches the Streamlit app locally, eventually through `uv run streamlit run app.py` or Docker Compose once those files exist.
-3. Docker Compose or the local setup runs the deterministic seed script to generate `data/sales.db` if needed.
-4. The SQLite database is exposed through a SQLite MCP server/connector.
-5. User enters a natural-language question (e.g., "Top 5 productos más vendidos en Medellín").
+3. Local `uv` runs can use the deterministic seed script directly; current Compose packaging runs the seed script through a one-shot `seed` service before the app starts.
+4. Current runtime uses `src/sales_query_agent/mcp_client.py` to launch `mcp-server-sqlite` and call its `read_query` tool.
+5. User enters a natural-language question in the chat input (e.g., "Top 5 productos más vendidos en Medellín").
 6. The application sends the schema and question to the agent framework powered by Amazon Bedrock.
 7. The agent generates a SQL query based on semantic intent.
 8. The app validates that the SQL is read-only, single-statement, and limited to the allowed `ventas` schema.
 9. The Streamlit UI displays the generated SQL query.
-10. The app executes the validated query through the SQLite MCP server/connector.
-11. The Streamlit UI renders the returned data as a table.
+10. The app executes the validated query through the SQLite MCP connector.
+11. The Streamlit UI renders the assistant response as a chat message with the generated SQL and returned data table.
+12. If the question is outside the `ventas` sales-analysis scope, the assistant chat message politely refuses and does not show SQL or a dataframe.
 
 ## Data and Artifact Policy
 
@@ -86,14 +87,15 @@ Docker packaging remains a target for the assignment. The design should plan for
 ## Risks & Edge Cases
 
 - **Dataset reproducibility**: Randomly generated data can drift across runs if not controlled. Mitigation: use a fixed random seed and document the seed command used by Docker Compose/local setup.
-- **MCP connector choice**: The exact SQLite MCP server/connector must be selected during design. Mitigation: evaluate a preexisting connector and document why it was chosen; if MCP is deferred, explicitly justify the deferral and keep the SQL access module swappable.
+- **MCP connector choice**: The implementation uses `mcp-server-sqlite`, which exposes `read_query` for validated `SELECT` statements. Mitigation: keep the app-facing MCP wrapper narrow so another connector can replace it if needed.
 - **LLM hallucinations**: Bedrock might generate invalid SQL or target non-existent columns. Mitigation: provide strict table schema context and validate SQL before MCP execution.
 - **Unsafe SQL**: Prompt instructions alone cannot guarantee safety. Mitigation: enforce single-statement `SELECT` only; reject `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `ATTACH`, `DETACH`, `PRAGMA`, semicolon chains, unknown tables, and unknown columns.
+- **Validator limitations**: The current validator is conservative token/regex validation, not a complete SQL parser. Mitigation: keep the accepted SQL subset intentionally narrow for this slice and add a parser later if broader SQL is required.
 - **AWS configuration**: Users running the app locally without properly configured AWS credentials for Bedrock will face application errors. Mitigation: add startup validation or clear sanitized error messages if credentials, region, or model access are missing.
-- **Docker credential leakage**: Docker images and repository files must not contain AWS credentials. Mitigation: use `.env.example` for non-secret variables only, ignore real `.env`, and mount AWS credentials read-only for local development if needed.
+- **Docker credential leakage**: Docker images and repository files must not contain AWS credentials. Mitigation: use `.env.example` for non-secret variables only, ignore real `.env`, and mount local AWS configuration only at runtime. AWS SSO profiles may require a read-write mount because botocore refreshes token cache files.
 - **Error exposure**: Raw stack traces may leak sensitive paths or config. Mitigation: show friendly user-facing errors and keep technical diagnostics limited to local logs/debug mode.
 
-## Open Questions
+## Resolved Decisions
 
-- Which specific agent framework (LangChain, LangGraph, or Strands) will be selected to wrap the Bedrock call and MCP tool access for this initial slice? (To be resolved in the design phase.)
-- Which preexisting SQLite MCP server/connector will be used, and will it run as a Compose service or as a local managed subprocess? (To be resolved in the design phase.)
+- Agent framework: use LangGraph as a minimal boundary before the query service in this slice.
+- SQLite MCP connector: use `mcp-server-sqlite` as a managed subprocess through the MCP Python SDK.

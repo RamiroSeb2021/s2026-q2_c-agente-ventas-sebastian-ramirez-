@@ -32,8 +32,9 @@ FILE_PATTERNS="*.py,*.md,Dockerfile,compose.yaml,compose.yml,docker-compose.yml,
 # Examples:
 #   EXCLUDE_PATTERNS="*.test.ts,*.spec.ts"
 #   EXCLUDE_PATTERNS="*_test.go,*.mock.ts"
-# Exclude secrets, generated artifacts, local caches, runtime state, and vendored agent skills.
-EXCLUDE_PATTERNS=".env,*.env,*.pem,*.key,*.crt,.venv/**,venv/**,__pycache__/**,.pytest_cache/**,.ruff_cache/**,.mypy_cache/**,.ty/**,.atl/**,.pi/**,skills/**,reviews/**,data/*.csv,*.db,*.sqlite,*.sqlite3,outputs/**"
+# Exclude secrets, generated artifacts, local caches, runtime state, generated lockfiles,
+# and vendored agent skills.
+EXCLUDE_PATTERNS=".env,*.env,*.pem,*.key,*.crt,.venv/**,venv/**,__pycache__/**,.pytest_cache/**,.ruff_cache/**,.mypy_cache/**,.ty/**,.atl/**,.pi/**,skills/**,reviews/**,data/*.csv,*.db,*.sqlite,*.sqlite3,outputs/**,uv.lock"
 
 # File containing code review rules
 # Default: AGENTS.md
