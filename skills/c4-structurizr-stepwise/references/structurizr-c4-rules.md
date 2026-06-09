@@ -1,4 +1,4 @@
-# Structurizr C4 Stepwise Rules
+# Structurizr C4 Rules
 
 ## Official Structurizr source notes
 
@@ -17,7 +17,7 @@ These rules were derived from:
 - `https://docs.structurizr.com/ai/mcp`
 - `https://docs.structurizr.com/server/documentation`
 
-Structurizr is a models-as-code tool for the C4 model. Prefer one consistent `workspace` that contains one `model` and several `views`, so C1/C2/C3 diagrams reuse the same elements and relationships instead of drifting across separate diagrams.
+Structurizr is a models-as-code tool for the C4 model. Prefer one consistent `workspace` that contains one `model` and several `views`, so C1/C2/C3 diagrams reuse the same elements and relationships instead of drifting across separate diagrams. See `structurizr-maintainability.md` for conventions that keep this workable over time.
 
 The official AI guidance reinforces why this matters: Structurizr is text-based, version-controllable, diff-friendly, model-based, and C4-aware. Unlike generic diagrams-as-code tools, it enforces hierarchy rules such as containers inside software systems and components inside containers. Treat AI-generated DSL as a draft that usually needs cleanup, validation, inspection, and human architectural review.
 
@@ -107,10 +107,12 @@ Do not start local Docker/MCP tooling without user approval; validation is oppor
 
 ## Level boundaries
 
-- **C1 System Context**: people, target software system, external systems, and high-level relationships only. Do not include containers, databases, APIs, components, classes, endpoints, or functions.
-- **C2 Containers**: preserve C1 people/external systems and add containers inside the system, such as UI apps, APIs, databases, schedulers, queues, or workers. Do not add internal components.
-- **C3 Components**: decompose one container at a time. Prefer meaningful architectural components: controllers, services, repositories, adapters/clients, validators, schedulers, and domain services. Do not model the full system at once.
-- **C4 Code/Class**: optional and narrow. Use only for one specific component when class-level detail helps explain a design decision.
+Use `c4-modeling-judgment.md` as the normative level-boundary reference. In short:
+
+- **C1 System Context**: people, target software system, external systems, and high-level relationships only.
+- **C2 Containers**: preserve useful C1 people/external systems and add major runnable units/data stores inside the system.
+- **C3 Components**: decompose one container at a time into meaningful architecture/code responsibilities.
+- **C4 Code/Class**: optional and narrow; use only when class-level detail helps explain a design decision.
 
 ## Stepwise interaction pattern
 
@@ -189,48 +191,9 @@ backendApi = container "Backend API"
 
 Use explicit `include` statements in views when people or external systems disappear accidentally.
 
-## Daily Control Bot example context
+## Example context
 
-Prior conversation context may include a system named **Daily Control Bot** for Acme Corp.
-
-The system:
-
-- sends scheduled notifications to Scrum team members;
-- receives daily reports using predefined fields;
-- validates missing reports;
-- detects repeated topics three times consecutively;
-- alerts possible blockers or stagnation;
-- publishes reports in a Microsoft Teams channel visible to the group.
-
-C1 actors/systems used before:
-
-- Integrante Scrum
-- Scrum Master
-- Equipo Scrum
-- Daily Control Bot
-- Microsoft Teams
-- Microsoft Entra ID
-- Microsoft Graph API
-
-C2 containers used before:
-
-- Teams App / Bot
-- Backend API
-- Scheduler
-- Daily Reports Database
-
-Important correction: C2 must preserve the consumption users from C1. Do not remove `Integrante Scrum`, `Scrum Master`, or `Equipo Scrum` unless the user asks.
-
-C3 decomposition used before for `Backend API`:
-
-- Report Controller
-- Configuration Controller
-- Report Service
-- Daily Validation Service
-- Blockage Detection Service
-- Notification Service
-- Teams Graph Client
-- Report Repository
+- `examples/daily-control-bot.md` — historical example only; do not apply it to unrelated systems.
 
 ## Quality checklist
 
@@ -243,4 +206,11 @@ Before returning DSL, verify:
 - C1 users remain visible in C2/C3 when useful;
 - names are consistent across levels;
 - DSL syntax is likely valid;
+- semantic quality passes `c4-review-checklists.md`;
 - response pauses for user review.
+
+## Related references
+
+- `c4-modeling-judgment.md` — synthesized C4 modeling principles, level boundaries, audience guidance, omissions, and anti-patterns.
+- `c4-review-checklists.md` — definition of done and review checklist by level.
+- `structurizr-maintainability.md` — maintainable workspace conventions and syntax-vs-quality guidance.
