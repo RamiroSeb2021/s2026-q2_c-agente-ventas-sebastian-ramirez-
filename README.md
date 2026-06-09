@@ -10,6 +10,34 @@ Guía de uso para la aplicación práctica de análisis de ventas con IA agentiv
 - Gráficos Plotly seguros: barras, pastel, línea y dispersión.
 - Descargas CSV y Excel.
 
+## Arquitectura C4
+
+El modelo C4 está guardado en `docs/architecture/` para que el diseño sea replicable en Structurizr Playground o con un validador Structurizr local.
+
+### C1 — Contexto del sistema
+
+El C1 muestra el sistema como caja negra: el usuario de negocio y el desarrollador/evaluador interactúan con el `Agente de Ventas`, que usa Amazon Bedrock para interpretar intención, tipo de salida y SQL estructurado.
+
+![C1: contexto del sistema](docs/architecture/c4-agente-ventas-c1.svg)
+
+DSL: [`docs/architecture/c4-agente-ventas-c1.dsl`](docs/architecture/c4-agente-ventas-c1.dsl)
+
+### C2 — Contenedores
+
+El C2 abre `Agente de Ventas` y separa sus unidades principales: la app Streamlit, el proceso MCP SQLite, el script de seed y la base SQLite local. Bedrock queda fuera como sistema externo.
+
+![C2: contenedores](docs/architecture/c4-agente-ventas-c2.svg)
+
+DSL: [`docs/architecture/c4-agente-ventas-c2.dsl`](docs/architecture/c4-agente-ventas-c2.dsl)
+
+### C3 — Componentes de Streamlit
+
+El C3 descompone solo el contenedor `Aplicación web Streamlit`: UI, frontera LangGraph, servicio de consulta, adaptador Bedrock, guardia SQL, adaptador MCP y presentación/exportación de resultados.
+
+![C3: componentes de Streamlit](docs/architecture/c4-agente-ventas-c3-streamlit.svg)
+
+DSL: [`docs/architecture/c4-agente-ventas-c3-streamlit.dsl`](docs/architecture/c4-agente-ventas-c3-streamlit.dsl)
+
 ## Configuración
 
 Copiá `.env.example` o exportá estas variables en tu shell:
